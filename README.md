@@ -17,7 +17,8 @@ functionality of the original.
 
 ## Preview
 
-![Preview Image](./images/preview.png) ![Preview Image 2](./images/previe_2.png)
+![Preview Image 2](./images/preview_2.png)  
+![Preview Image](./images/preview.png)
 
 ## Installation
 
