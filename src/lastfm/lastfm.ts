@@ -1,7 +1,7 @@
-import type { BrowserWindow } from 'electron';
+import { BrowserWindow } from 'electron';
 
-import * as crypto from 'crypto';
 import fetch from 'cross-fetch';
+import * as crypto from 'crypto';
 import type ElectronStore = require('electron-store');
 
 export interface ScrobbleState {
@@ -41,21 +41,44 @@ async function authenticateLastFm(mainWindow: BrowserWindow, store: ElectronStor
         return;
     }
 
+    // 별도의 인증 창 생성
+    const authWindow = new BrowserWindow({
+        parent: mainWindow,
+        width: 800,
+        height: 600,
+        modal: true,
+        frame: true,
+        show: true,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+        },
+    });
+
+    authWindow.setTitle('Last.fm Authentication');
+
     const authUrl = `https://www.last.fm/api/auth/?api_key=${apiKey}&cb=https://soundcloud.com/discover`;
 
-    await mainWindow.loadURL(authUrl);
+    // 인증 URL로 이동
+    await authWindow.loadURL(authUrl);
 
-    mainWindow.webContents.on('will-redirect', async (_, url) => {
+    // 리디렉션 이벤트 감지
+    authWindow.webContents.on('will-redirect', async (_, url) => {
         try {
             const urlObj = new URL(url);
             const token = urlObj.searchParams.get('token');
             if (token) {
                 await getLastFmSession(apiKey, token, store);
-                mainWindow.loadURL('https://soundcloud.com/discover');
+                authWindow.close();
             }
         } catch (error) {
             console.error('Error during Last.fm authentication', error);
         }
+    });
+
+    // 창이 닫힐 때
+    authWindow.on('closed', () => {
+        console.log('Last.fm authentication window closed');
     });
 }
 
@@ -68,11 +91,11 @@ async function getLastFmSession(api_key: string, token: string, store: ElectronS
             api_key,
             token,
         },
-        lastFmSecret as string,
+        lastFmSecret as string
     );
 
     const response = await fetch(
-        `https://ws.audioscrobbler.com/2.0/?method=auth.getSession&api_key=${api_key}&token=${token}&api_sig=${apiSig}&format=json`,
+        `https://ws.audioscrobbler.com/2.0/?method=auth.getSession&api_key=${api_key}&token=${token}&api_sig=${apiSig}&format=json`
     );
     const data = await response.json();
     if (data.error) {
@@ -89,7 +112,7 @@ function generateApiSignature(
         api_key?: string;
         token?: string;
     },
-    secret: string,
+    secret: string
 ): string {
     const sortedParams =
         Object.keys(params)
@@ -197,11 +220,11 @@ async function updateNowPlaying(trackInfo: { author: any; title: any }, store: E
 
 export {
     authenticateLastFm,
+    generateApiSignature,
     getLastFmSession,
     scrobbleTrack,
-    updateNowPlaying,
-    trackChanged,
     shouldScrobble,
     timeStringToSeconds,
-    generateApiSignature,
+    trackChanged,
+    updateNowPlaying,
 };

@@ -1,18 +1,26 @@
 import { BrowserWindow } from 'electron';
-import type ElectronStore = require('electron-store');
 import { authenticateLastFm } from './lastfm';
+import type ElectronStore = require('electron-store');
 
-async function createAuthWindow(parentWindow: BrowserWindow): Promise<{apiKey: string, apiSecret: string}> {
+async function createAuthWindow(parentWindow: BrowserWindow): Promise<{ apiKey: string; apiSecret: string }> {
     const authWindow = new BrowserWindow({
         width: 400,
         height: 600,
         parent: parentWindow,
         modal: true,
+        frame: true,
+        titleBarStyle: 'default',
+        center: true,
+        resizable: false,
+        fullscreenable: false,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            sandbox: true,
         },
     });
+
+    authWindow.setTitle('Last.fm API Configuration');
 
     const htmlContent = `<!DOCTYPE html>
         <html>
@@ -23,14 +31,21 @@ async function createAuthWindow(parentWindow: BrowserWindow): Promise<{apiKey: s
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
                     padding: 20px;
                     color: #333;
+                    background-color: #f5f5f5;
+                    margin: 0;
                 }
                 .container {
                     max-width: 350px;
                     margin: 0 auto;
+                    background-color: #fff;
+                    padding: 20px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                 }
                 h2 {
                     color: #333;
                     text-align: center;
+                    margin-top: 0;
                 }
                 .form-group {
                     margin-bottom: 15px;

@@ -5,6 +5,7 @@ export class NotificationManager {
     private queue: string[] = [];
     private isDisplaying = false;
     private parentWindow: BrowserWindow;
+    private headerHeight = 32; // 헤더 높이
 
     constructor(parentWindow: BrowserWindow) {
         this.parentWindow = parentWindow;
@@ -33,16 +34,33 @@ export class NotificationManager {
 
         this.isDisplaying = true;
         const message = this.queue.shift();
-        const bounds = this.parentWindow.getBounds();
-        const width = 400; // increased from 300
-        const height = 70; // increased from 50
+        const bounds = this.parentWindow.getContentBounds(); // contentBounds 사용
+        const width = 400;
+        const height = 70;
 
+        // 모든 다른 BrowserView 위에 표시되도록 z-index 설정
         this.parentWindow.addBrowserView(this.view);
+
+        // 모든 뷰의 목록 가져오기 (있다면)
+        const views = this.parentWindow.getBrowserViews();
+
+        // 알림 뷰를 맨 위로 이동 (마지막에 추가된 뷰가 맨 위에 표시됨)
+        if (views.length > 1) {
+            for (const view of views) {
+                if (view !== this.view) {
+                    this.parentWindow.removeBrowserView(view);
+                    this.parentWindow.addBrowserView(view);
+                }
+            }
+            // 알림 뷰를 마지막에 추가
+            this.parentWindow.addBrowserView(this.view);
+        }
+
         this.view.setBounds({
             x: Math.floor((bounds.width - width) / 2),
-            y: bounds.height - height - 100, // increased from 20 to move it up
+            y: bounds.height - height - 120, // 하단에서 120px 위에 표시
             width,
-            height
+            height,
         });
 
         const html = `
@@ -52,7 +70,7 @@ export class NotificationManager {
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                font-family: 'Pretendard JP', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 background-color: transparent;
                 color: white;
                 height: 100vh;
@@ -65,8 +83,8 @@ export class NotificationManager {
             .notification {
                 padding: 15px 25px;
                 border-radius: 12px;
-                font-size: 18px;
-                font-weight: 600;
+                font-size: 16px;
+                font-weight: 500;
                 text-align: center;
                 transform: translateY(0);
                 transition: transform 0.3s ease-in-out;
@@ -76,8 +94,10 @@ export class NotificationManager {
                 max-width: 90%;
                 user-select: none;
                 -webkit-user-select: none;
-                background: rgba(40, 40, 40, 0.95);
-                backdrop-filter: blur(5px);
+                background: rgba(40, 40, 40, 0.9);
+                backdrop-filter: blur(8px);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.1);
             }
             body.fade-out .notification {
                 transform: translateY(10px);
@@ -94,7 +114,7 @@ export class NotificationManager {
                         const { ipcRenderer } = require('electron');
                         ipcRenderer.send('notification-done');
                     }, 300);
-                }, 4500);
+                }, 3000); // 조금 빠르게 사라지도록 4500에서 3000으로 변경
             </script>
         </body>`;
 
