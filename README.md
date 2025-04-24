@@ -7,7 +7,7 @@
 ## Installation
 
 ### Release
-For the latest version of soundcloud-rpc, download the installer or executable file from the [latest release](https://github.com/richardhbtz/soundcloud-rpc/releases) page.
+For the latest version of soundcloud-rpc, download the installer or executable file from the [latest release](https://github.com/Lunatica-Luna/soundcloud-rpc/releases) page.
 
 > [!NOTE]
 >### macOS Users
