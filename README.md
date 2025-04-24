@@ -9,7 +9,7 @@ functionality of the original.
 ### Key Modifications:
 
 -   Frameless window design for a modern look and feel
--   Custom window controls integrated with SoundCloud's interface
+-   Custom window controls integrated with SoundCloud's interface (Include theme toggle)
 -   Enhanced UI consistency across the application
 -   Smoother scrolling experience with custom scrollbar styling
 
@@ -17,8 +17,7 @@ functionality of the original.
 
 ## Preview
 
-![Preview Image 2](./images/preview_2.png)  
-![Preview Image](./images/preview.png)
+![Preview Image 2](./images/preview_2.png)
 
 ## Installation
 
