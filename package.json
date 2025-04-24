@@ -1,73 +1,75 @@
 {
-  "name": "soundcloud-rpc",
-  "version": "0.1.0",
-  "description": "🎵 A Soundcloud client with Discord Rich Presence support",
-  "author": {
-    "name": "Richard Habitzreuter",
-    "email": "richardhabitzreuter@icloud.com"
-  },
-  "license": "MIT",
-  "scripts": {
-    "lint": "eslint -c .eslintrc --ext .ts ./src",
-    "dev": "tsc && electron ./tsc/main.js",
-    "build": "tsc && electron-builder --dir",
-    "build-win": "tsc && electron-builder -w nsis",
-    "build-win-ptb": "tsc && electron-builder -w portable",
-    "build-mac": "tsc && electron-builder -m dmg",
-    "build-linux-deb": "tsc && electron-builder -l deb",
-    "build-linux-appimage": "tsc && electron-builder -l appimage"
-  },
-  "main": "./tsc/main.js",
-  "repository": "https://github.com/richardhbtz/soundcloud-rpc",
-  "publish": {
-    "provider": "github",
-    "releaseType": "release"
-  },
-  "build": {
-    "appId": "com.richardhbtz.soundcloud-rpc",
-    "productName": "SoundCloud",
-    "asar": true,
-    "files": [
-      "tsc/**/*"
-    ],
-    "directories": {
-      "output": "build"
+    "name": "soundcloud-rpc",
+    "version": "0.1.0",
+    "description": "🎵 A Soundcloud client with Discord Rich Presence support",
+    "author": {
+        "name": "Lunatica-Luna",
+        "email": "devlead@gongroin.com"
     },
-    "mac": {
-      "target": "dmg",
-      "icon": "assets/icons/soundcloud-mac.icns",
-      "artifactName": "soundcloud-${version}-mac.${ext}"
+    "license": "MIT",
+    "scripts": {
+        "lint": "eslint -c .eslintrc --ext .ts ./src",
+        "dev": "tsc && xcopy /E /I /Y \"src\\header\" \"tsc\\header\" && electron ./tsc/main.js",
+        "build": "tsc && xcopy /E /I /Y \"src\\header\" \"tsc\\header\" && electron-builder --dir",
+        "build-win": "tsc && xcopy /E /I /Y \"src\\header\" \"tsc\\header\" && electron-builder -w nsis",
+        "build-win-ptb": "tsc && electron-builder -w portable",
+        "build-mac": "tsc && electron-builder -m dmg",
+        "build-linux-deb": "tsc && electron-builder -l deb",
+        "build-linux-appimage": "tsc && electron-builder -l appimage"
     },
-    "win": {
-      "target": "nsis",
-      "icon": "assets/icons/soundcloud-win.ico",
-      "artifactName": "soundcloud-${version}-installer-win.${ext}"
+    "main": "./tsc/main.js",
+    "repository": "https://github.com/Lunatica-Luna/soundcloud-rpc",
+    "publish": {
+        "provider": "github",
+        "releaseType": "release"
     },
-    "linux": {
-      "target": "AppImage",
-      "artifactName": "soundcloud-${version}-installer-linux.${ext}"
+    "build": {
+        "appId": "kr.lunatica.soundcloud-rpc",
+        "productName": "SoundCloud RPC",
+        "asar": true,
+        "files": [
+            "tsc/**/*"
+        ],
+        "directories": {
+            "output": "build"
+        },
+        "mac": {
+            "target": "dmg",
+            "icon": "assets/icons/soundcloud-mac.icns",
+            "artifactName": "soundcloud-${version}-mac.${ext}"
+        },
+        "win": {
+            "target": "nsis",
+            "icon": "assets/icons/soundcloud-win.ico",
+            "artifactName": "soundcloud-${version}-installer-win.${ext}"
+        },
+        "linux": {
+            "target": "AppImage",
+            "artifactName": "soundcloud-${version}-installer-linux.${ext}"
+        }
+    },
+    "devDependencies": {
+        "@types/discord-rpc": "^4.0.6",
+        "@types/electron-localshortcut": "^3.1.3",
+        "@types/electron-prompt": "^1.6.5",
+        "@types/node": "^20.11.20",
+        "@types/semver": "^7.5.8",
+        "@typescript-eslint/eslint-plugin": "^4.33.0",
+        "@typescript-eslint/parser": "^4.33.0",
+        "electron": "35.2.1",
+        "electron-builder": "^26.0.12",
+        "eslint": "^7.32.0",
+        "typescript": "^5.8.3"
+    },
+    "dependencies": {
+        "@cliqz/adblocker-electron": "^1.28.2",
+        "@xhayper/discord-rpc": "^1.2.0",
+        "cross-fetch": "^4.0.0",
+        "discord-rpc": "^4.0.1",
+        "electron-localshortcut": "^3.2.1",
+        "electron-prompt": "^1.7.0",
+        "electron-store": "^8.1.0",
+        "electron-updater": "^6.6.2",
+        "electron-window-state": "^5.0.3"
     }
-  },
-  "devDependencies": {
-    "@types/discord-rpc": "^4.0.6",
-    "@types/node": "^20.11.20",
-    "@types/semver": "^7.5.8",
-    "@typescript-eslint/eslint-plugin": "^4.33.0",
-    "@typescript-eslint/parser": "^4.33.0",
-    "electron": "^35.1.5",
-    "electron-builder": "^24.9.1",
-    "eslint": "^7.32.0",
-    "typescript": "^4.8.3"
-  },
-  "dependencies": {
-    "@cliqz/adblocker-electron": "^1.28.2",
-    "electron-window-state": "^5.0.3",
-    "@xhayper/discord-rpc": "^1.2.0",
-    "cross-fetch": "^4.0.0",
-    "discord-rpc": "^4.0.1",
-    "electron-localshortcut": "^3.2.1",
-    "electron-prompt": "^1.7.0",
-    "electron-store": "^8.1.0",
-    "electron-updater": "^6.3.4"
-  }
 }

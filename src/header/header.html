@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <link rel="stylesheet" href="header.css" />
+        <link rel="stylesheet" href="public/pretendard-jp.css" />
+        <script src="https://unpkg.com/lucide@latest"></script>
+    </head>
+    <body>
+        <div class="custom-header">
+            <div class="title-bar" title="Double click to maximize/restore">
+                <div class="title-text" id="title-text">SoundCloud RPC</div>
+            </div>
+            <div class="window-controls">
+                <div class="theme-toggle" id="theme-toggle" title="Theme Toggle">
+                    <i class="theme-icon" id="theme-icon" data-lucide="moon"></i>
+                </div>
+                <div class="control minimize" id="minimize-btn" title="Minimize">
+                    <i data-lucide="minus"></i>
+                </div>
+                <div class="control maximize" id="maximize-btn" title="Maximize">
+                    <div class="icon-container">
+                        <i id="maximize-icon" data-lucide="square" style="display: inline-flex"></i>
+                        <i id="restore-icon" data-lucide="copy" style="display: none"></i>
+                    </div>
+                </div>
+                <div class="control close" id="close-btn" title="Close">
+                    <i data-lucide="x"></i>
+                </div>
+            </div>
+        </div>
+        <script src="header.js"></script>
+    </body>
+</html>

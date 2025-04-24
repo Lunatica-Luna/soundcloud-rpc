@@ -1,31 +1,32 @@
-const Store = require('electron-store');
+import * as Store from 'electron-store';
 
-import { app, BrowserWindow, dialog, Menu } from 'electron';
 import { ElectronBlocker, fullLists } from '@cliqz/adblocker-electron';
+import { app, BrowserView, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import { readFileSync, writeFileSync } from 'fs';
+import * as path from 'path';
 
-import { ActivityType } from 'discord-api-types/v10';
 import { Client as DiscordClient } from '@xhayper/discord-rpc';
+import { ActivityType } from 'discord-api-types/v10';
 
 import {
     authenticateLastFm,
     scrobbleTrack,
-    updateNowPlaying,
     shouldScrobble,
     timeStringToSeconds,
+    updateNowPlaying,
 } from './lastfm/lastfm';
 
-import { setupLastFmConfig } from './lastfm/lastfm-auth';
 import type { ScrobbleState } from './lastfm/lastfm';
+import { setupLastFmConfig } from './lastfm/lastfm-auth';
 
 import fetch from 'cross-fetch';
 import { setupDarwinMenu } from './macos/menu';
 import { NotificationManager } from './notifications/notificationManager';
 
-const { autoUpdater } = require('electron-updater');
-const windowStateManager = require('electron-window-state');
-const localShortcuts = require('electron-localshortcut');
-const prompt = require('electron-prompt');
+import * as localShortcuts from 'electron-localshortcut';
+import * as prompt from 'electron-prompt';
+import { autoUpdater } from 'electron-updater';
+import * as windowStateManager from 'electron-window-state';
 const clientId = '1090770350251458592';
 const store = new Store();
 
@@ -46,12 +47,16 @@ const info: Info = {
 info.rpc.login().catch(console.error);
 
 let mainWindow: BrowserWindow | null;
+let headerView: BrowserView | null;
+let contentView: BrowserView | null;
 let blocker: ElectronBlocker;
 let currentScrobbleState: ScrobbleState | null = null;
 let notificationManager: NotificationManager;
+let currentTrackTitle = '';
+let isDarkTheme = true;
 
-let displayWhenIdling = false; // Whether to display a status message when music is paused
-let displaySCSmallIcon = false; // Whether to display the small SoundCloud logo
+const displayWhenIdling = false; // Whether to display a status message when music is paused
+const displaySCSmallIcon = false; // Whether to display the small SoundCloud logo
 
 function setupUpdater() {
     autoUpdater.autoDownload = true;
@@ -74,49 +79,93 @@ async function init() {
     if (process.platform === 'darwin') setupDarwinMenu();
     else Menu.setApplicationMenu(null);
 
-    let windowState = windowStateManager({ defaultWidth: 800, defaultHeight: 800 });
+    const windowState = windowStateManager({ defaultWidth: 1280, defaultHeight: 720 });
 
     mainWindow = new BrowserWindow({
-        width: windowState.width,
-        height: windowState.height,
+        width: 1280,
+        height: 720,
+        minWidth: 1280,
+        minHeight: 720,
         x: windowState.x,
         y: windowState.y,
+        frame: false,
         webPreferences: {
             nodeIntegration: false,
         },
+        backgroundColor: '#121212',
+        useContentSize: true,
     });
 
     notificationManager = new NotificationManager(mainWindow);
 
     windowState.manage(mainWindow);
 
-    mainWindow.webContents.setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    // Create header view
+    headerView = new BrowserView({
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+        },
+    });
+
+    mainWindow.addBrowserView(headerView);
+    headerView.setBounds({ x: 0, y: 0, width: mainWindow.getBounds().width, height: 32 });
+    headerView.setAutoResize({ width: true, height: false });
+    headerView.webContents.loadFile(path.join(__dirname, 'header', 'header.html'));
+
+    // Create content view for SoundCloud
+    contentView = new BrowserView({
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+        },
+    });
+
+    mainWindow.addBrowserView(contentView);
+    contentView.setBounds({
+        x: 0,
+        y: 32,
+        width: mainWindow.getBounds().width,
+        height: mainWindow.getBounds().height - 32,
+    });
+    contentView.setAutoResize({ width: true, height: true });
+
+    contentView.webContents.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
+
+    // Setup window control handlers
+    setupWindowControls();
+
+    // Setup theme handlers
+    setupThemeHandlers();
 
     // Setup proxy
     if (store.get('proxyEnabled')) {
-        const { protocol, host } = store.get('proxyData');
+        const { protocol, host } = store.get('proxyData') as { protocol: string; host: string };
 
-        await mainWindow.webContents.session.setProxy({
+        await contentView.webContents.session.setProxy({
             proxyRules: `${protocol}//${host}`,
         });
     }
 
     // Load the SoundCloud website
-    mainWindow.loadURL('https://soundcloud.com/discover');
+    contentView.webContents.loadURL('https://soundcloud.com/discover');
 
-    const executeJS = (script: string) => mainWindow.webContents.executeJavaScript(script);
+    const executeJS = (script: string) => contentView.webContents.executeJavaScript(script);
 
     // Wait for the page to fully load
-    mainWindow.webContents.on('did-finish-load', async () => {
+    contentView.webContents.on('did-finish-load', async () => {
         const apikey = store.get('lastFmApiKey');
         const secret = store.get('lastFmSecret');
 
-        if (apikey && secret && mainWindow.webContents.getURL().startsWith('https://soundcloud.com/')) {
+        if (apikey && secret && contentView.webContents.getURL().startsWith('https://soundcloud.com/')) {
             await authenticateLastFm(mainWindow, store);
             injectToastNotification('Last.fm authenticated');
         }
+
+        // Apply theme to content
+        applyThemeToContent(isDarkTheme);
 
         if (store.get('adBlocker')) {
             const blocker = await ElectronBlocker.fromLists(
@@ -127,9 +176,9 @@ async function init() {
                     path: 'engine.bin',
                     read: async (...args) => readFileSync(...args),
                     write: async (...args) => writeFileSync(...args),
-                },
+                }
             );
-            blocker.enableBlockingInSession(mainWindow.webContents.session);
+            blocker.enableBlockingInSession(contentView.webContents.session);
         }
 
         setInterval(async () => {
@@ -162,6 +211,12 @@ async function init() {
                             .trim() as string, // Clean up any leading/trailing spaces.
                     };
 
+                    // Update title in header
+                    currentTrackTitle = `${currentTrack.title} - ${currentTrack.author}`;
+                    if (headerView) {
+                        headerView.webContents.send('update-title', currentTrackTitle);
+                    }
+
                     const artworkUrl = await executeJS(`
                     new Promise(resolve => {
                         const artworkEl = document.querySelector('.playbackSoundBadge__avatar .image__lightOutline span');
@@ -171,10 +226,10 @@ async function init() {
 
                     const [elapsedTime, totalTime] = await Promise.all([
                         executeJS(
-                            `document.querySelector('.playbackTimeline__timePassed span:last-child')?.innerText ?? ''`,
+                            `document.querySelector('.playbackTimeline__timePassed span:last-child')?.innerText ?? ''`
                         ),
                         executeJS(
-                            `document.querySelector('.playbackTimeline__duration span:last-child')?.innerText ?? ''`,
+                            `document.querySelector('.playbackTimeline__duration span:last-child')?.innerText ?? ''`
                         ),
                     ]); //;
 
@@ -204,7 +259,7 @@ async function init() {
                                     author: currentScrobbleState.artist,
                                     title: currentScrobbleState.title,
                                 },
-                                store,
+                                store
                             );
                         }
 
@@ -227,7 +282,7 @@ async function init() {
                                 author: currentScrobbleState.artist,
                                 title: currentScrobbleState.title,
                             },
-                            store,
+                            store
                         );
                         currentScrobbleState.scrobbled = true;
                     }
@@ -259,8 +314,20 @@ async function init() {
                         smallImageText: 'SoundCloud',
                         instance: false,
                     });
+
+                    // Reset title
+                    currentTrackTitle = 'SoundCloud RPC';
+                    if (headerView) {
+                        headerView.webContents.send('update-title', currentTrackTitle);
+                    }
                 } else {
                     info.rpc.user?.clearActivity();
+
+                    // Reset title
+                    currentTrackTitle = 'SoundCloud RPC';
+                    if (headerView) {
+                        headerView.webContents.send('update-title', currentTrackTitle);
+                    }
                 }
             } catch (error) {
                 console.error('Error during RPC update:', error);
@@ -272,24 +339,295 @@ async function init() {
     mainWindow.on('close', function () {
         store.set('bounds', mainWindow.getBounds());
         store.set('maximazed', mainWindow.isMaximized());
+        store.set('theme', isDarkTheme ? 'dark' : 'light');
     });
 
     mainWindow.on('closed', function () {
         mainWindow = null;
+        headerView = null;
+        contentView = null;
     });
 
+    // Resize content view when window is resized
+    mainWindow.on('resize', () => {
+        if (mainWindow && contentView) {
+            const bounds = mainWindow.getBounds();
+            contentView.setBounds({ x: 0, y: 32, width: bounds.width, height: bounds.height - 32 });
+        }
+    });
 
-    // Register F2 shortcut for toggling the adblocker
+    // Register shortcuts
+    setupShortcuts();
+}
+
+function setupWindowControls() {
+    if (!mainWindow) return;
+
+    // 헤더의 높이
+    const HEADER_HEIGHT = 32;
+
+    ipcMain.on('minimize-window', () => {
+        if (mainWindow) mainWindow.minimize();
+    });
+
+    ipcMain.on('maximize-window', () => {
+        if (mainWindow) {
+            if (mainWindow.isMaximized()) {
+                mainWindow.unmaximize();
+            } else {
+                mainWindow.maximize();
+            }
+        }
+    });
+
+    // contentView와 headerView의 크기와 위치를 조정하는 함수
+    function adjustContentViews() {
+        if (!mainWindow || !contentView || !headerView) return;
+
+        const { width, height } = mainWindow.getContentBounds();
+
+        // 헤더 뷰 설정
+        headerView.setBounds({
+            x: 0,
+            y: 0,
+            width,
+            height: HEADER_HEIGHT,
+        });
+
+        // 컨텐츠 뷰 설정 (헤더 아래에 위치)
+        contentView.setBounds({
+            x: 0,
+            y: HEADER_HEIGHT,
+            width,
+            height: height - HEADER_HEIGHT,
+        });
+    }
+
+    ipcMain.on('title-bar-double-click', () => {
+        // 타이틀바 더블클릭 시 최대화/복원 토글
+        if (mainWindow) {
+            if (mainWindow.isMaximized()) {
+                mainWindow.unmaximize();
+            } else {
+                mainWindow.maximize();
+            }
+        }
+    });
+
+    // 창 최대화/복원 상태 변경 감지 및 렌더러에 알림
+    mainWindow.on('maximize', () => {
+        console.log('Window maximized');
+        if (headerView) {
+            headerView.webContents.send('window-state-changed', 'maximized');
+        }
+        adjustContentViews();
+    });
+
+    mainWindow.on('unmaximize', () => {
+        console.log('Window unmaximized');
+        if (headerView) {
+            headerView.webContents.send('window-state-changed', 'normal');
+        }
+        adjustContentViews();
+    });
+
+    // 크기 변경 시 컨텐츠 영역 조정
+    mainWindow.on('resize', () => {
+        adjustContentViews();
+    });
+
+    ipcMain.on('close-window', () => {
+        if (mainWindow) mainWindow.close();
+    });
+
+    ipcMain.on('get-initial-state', () => {
+        if (headerView) {
+            headerView.webContents.send('theme-changed', isDarkTheme);
+            headerView.webContents.send('update-title', currentTrackTitle || 'SoundCloud RPC');
+            headerView.webContents.send('window-state-changed', mainWindow.isMaximized() ? 'maximized' : 'normal');
+        }
+    });
+
+    // 초기 컨텐츠 뷰 조정
+    adjustContentViews();
+}
+
+function setupThemeHandlers() {
+    // Load theme preference
+    isDarkTheme = store.get('theme') !== 'light';
+
+    ipcMain.on('toggle-theme', () => {
+        isDarkTheme = !isDarkTheme;
+        if (headerView) {
+            headerView.webContents.send('theme-changed', isDarkTheme);
+        }
+        applyThemeToContent(isDarkTheme);
+    });
+}
+
+function applyThemeToContent(isDark: boolean) {
+    if (!contentView) return;
+
+    const themeScript = `
+        (function() {
+            // SoundCloud의 기존 테마 클래스 제거
+            document.body.classList.remove('${isDark ? 'theme-light' : 'theme-dark'}');
+            document.body.classList.add('${isDark ? 'theme-dark' : 'theme-light'}');
+            
+            // CSS 변수 접근이 가능한 경우 직접 테마 색상 설정
+            try {
+                // 테마 색상을 직접 설정
+                if (${isDark}) {
+                    document.documentElement.style.setProperty('--background-base', '#121212');
+                    document.documentElement.style.setProperty('--background-surface', '#212121');
+                    document.documentElement.style.setProperty('--text-base', '#ffffff');
+                } else {
+                    document.documentElement.style.setProperty('--background-base', '#ffffff');
+                    document.documentElement.style.setProperty('--background-surface', '#f2f2f2');
+                    document.documentElement.style.setProperty('--text-base', '#333333');
+                }
+                
+                // 스크롤바 스타일 추가
+                const style = document.createElement('style');
+                style.id = 'custom-scrollbar-style';
+                style.textContent = \`
+                    /* 기존 스크롤바 숨기기 */
+                    ::-webkit-scrollbar-button {
+                        display: none;
+                    }
+                    
+                    /* 스크롤바 기본 스타일 */
+                    ::-webkit-scrollbar {
+                        width: 8px;
+                        height: 8px;
+                        background-color: ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'};
+                    }
+                    
+                    /* 스크롤바 트랙 */
+                    ::-webkit-scrollbar-track {
+                        background-color: transparent;
+                    }
+                    
+                    /* 스크롤바 썸 (이동 부분) */
+                    ::-webkit-scrollbar-thumb {
+                        background-color: ${isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)'};
+                        border-radius: 4px;
+                        transition: background-color 0.3s;
+                    }
+                    
+                    /* 스크롤바 호버 효과 */
+                    ::-webkit-scrollbar-thumb:hover {
+                        background-color: ${isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)'};
+                    }
+                    
+                    /* 코너 스타일 */
+                    ::-webkit-scrollbar-corner {
+                        background-color: transparent;
+                    }
+                \`;
+                
+                // 기존 스타일이 있으면 제거하고 새로운 스타일 추가
+                const existingStyle = document.getElementById('custom-scrollbar-style');
+                if (existingStyle) {
+                    existingStyle.remove();
+                }
+                document.head.appendChild(style);
+            } catch(e) {
+                console.error('테마 CSS 변수 설정 실패:', e);
+            }
+        })();
+    `;
+
+    contentView.webContents.executeJavaScript(themeScript).catch(console.error);
+}
+
+function setupShortcuts() {
+    if (!mainWindow || !contentView) return;
+
+    // 웹 콘텐츠에 키보드 단축키 적용
+    contentView.webContents.on('before-input-event', (event, input) => {
+        // F12: 개발자 도구
+        if (input.key === 'F12' && !input.alt && !input.control && !input.meta && !input.shift) {
+            contentView.webContents.openDevTools({ mode: 'detach' });
+            event.preventDefault();
+        }
+
+        // F2: 광고 차단기 토글
+        if (input.key === 'F2' && !input.alt && !input.control && !input.meta && !input.shift) {
+            toggleAdBlocker();
+            event.preventDefault();
+        }
+
+        // F3: 프록시 설정
+        if (input.key === 'F3' && !input.alt && !input.control && !input.meta && !input.shift) {
+            toggleProxy();
+            event.preventDefault();
+        }
+
+        // F4: Last.fm 인증
+        if (input.key === 'F4' && !input.alt && !input.control && !input.meta && !input.shift) {
+            const apikey = store.get('lastFmApiKey');
+            const secret = store.get('lastFmSecret');
+            if (!apikey || !secret) {
+                setupLastFmConfig(mainWindow, store);
+            } else {
+                authenticateLastFm(mainWindow, store);
+                injectToastNotification('Last.fm authenticated');
+            }
+            event.preventDefault();
+        }
+
+        // F6: Last.fm 설정 삭제
+        if (input.key === 'F6' && !input.alt && !input.control && !input.meta && !input.shift) {
+            store.delete('lastFmApiKey');
+            store.delete('lastFmSecret');
+            contentView.webContents.reload();
+            event.preventDefault();
+        }
+
+        // 확대 (Ctrl+=)
+        if (input.key === '=' && input.control && !input.alt && !input.meta && !input.shift) {
+            const zoomLevel = contentView.webContents.getZoomLevel();
+            contentView.webContents.setZoomLevel(Math.min(zoomLevel + 1, 9));
+            event.preventDefault();
+        }
+
+        // 축소 (Ctrl+-)
+        if (input.key === '-' && input.control && !input.alt && !input.meta && !input.shift) {
+            const zoomLevel = contentView.webContents.getZoomLevel();
+            contentView.webContents.setZoomLevel(Math.max(zoomLevel - 1, -9));
+            event.preventDefault();
+        }
+
+        // 기본 확대/축소 (Ctrl+0)
+        if (input.key === '0' && input.control && !input.alt && !input.meta && !input.shift) {
+            contentView.webContents.setZoomLevel(0);
+            event.preventDefault();
+        }
+
+        // 뒤로 가기 (Ctrl+B 또는 Ctrl+P)
+        if ((input.key === 'b' || input.key === 'p') && input.control && !input.alt && !input.meta && !input.shift) {
+            if (contentView.webContents.canGoBack()) {
+                contentView.webContents.goBack();
+            }
+            event.preventDefault();
+        }
+
+        // 앞으로 가기 (Ctrl+F 또는 Ctrl+N)
+        if ((input.key === 'f' || input.key === 'n') && input.control && !input.alt && !input.meta && !input.shift) {
+            if (contentView.webContents.canGoForward()) {
+                contentView.webContents.goForward();
+            }
+            event.preventDefault();
+        }
+    });
+
+    // 단축키 등록은 유지 (직접적인 콘텐츠 조작은 위의 이벤트 핸들러로 이동)
     localShortcuts.register(mainWindow, 'F2', () => toggleAdBlocker());
-
     localShortcuts.register(mainWindow, 'F12', () => {
-        mainWindow.webContents.openDevTools({ mode: 'detach' });
+        if (contentView) contentView.webContents.openDevTools({ mode: 'detach' });
     });
-
-    // Register F3 shortcut to show the proxy window
     localShortcuts.register(mainWindow, 'F3', async () => toggleProxy());
-
-    // Register F4 shortcut to connecting to last.fm api
     localShortcuts.register(mainWindow, 'F4', async () => {
         const apikey = store.get('lastFmApiKey');
         const secret = store.get('lastFmSecret');
@@ -300,35 +638,47 @@ async function init() {
             injectToastNotification('Last.fm authenticated');
         }
     });
-
     localShortcuts.register(mainWindow, 'F6', async () => {
         store.delete('lastFmApiKey');
         store.delete('lastFmSecret');
-        mainWindow.webContents.reload();
+        if (contentView) contentView.webContents.reload();
     });
 
-    let zoomLevel = mainWindow.webContents.getZoomLevel();
-
-    // Zoom In (Ctrl + +)
+    // 확대/축소
     localShortcuts.register(mainWindow, 'CmdOrCtrl+=', () => {
-        zoomLevel = Math.min(zoomLevel + 1, 9); // Limit zoom level to 9
-        mainWindow.webContents.setZoomLevel(zoomLevel);
+        if (!contentView) return;
+        const zoomLevel = contentView.webContents.getZoomLevel();
+        contentView.webContents.setZoomLevel(Math.min(zoomLevel + 1, 9));
     });
-
-    // Zoom Out (Ctrl + -)
     localShortcuts.register(mainWindow, 'CmdOrCtrl+-', () => {
-        zoomLevel = Math.max(zoomLevel - 1, -9); // Limit zoom level to -9
-        mainWindow.webContents.setZoomLevel(zoomLevel);
+        if (!contentView) return;
+        const zoomLevel = contentView.webContents.getZoomLevel();
+        contentView.webContents.setZoomLevel(Math.max(zoomLevel - 1, -9));
     });
-
-    // Reset Zoom (Ctrl + 0)
     localShortcuts.register(mainWindow, 'CmdOrCtrl+0', () => {
-        zoomLevel = 0; // Reset zoom level to default
-        mainWindow.webContents.setZoomLevel(zoomLevel);
+        if (!contentView) return;
+        contentView.webContents.setZoomLevel(0);
     });
 
-    localShortcuts.register(mainWindow, ['CmdOrCtrl+B', 'CmdOrCtrl+P'], () => mainWindow.webContents.goBack());
-    localShortcuts.register(mainWindow, ['CmdOrCtrl+F', 'CmdOrCtrl+N'], () => mainWindow.webContents.goForward());
+    // 뒤로/앞으로 가기
+    localShortcuts.register(mainWindow, ['CmdOrCtrl+B', 'CmdOrCtrl+P'], () => {
+        if (contentView && contentView.webContents.canGoBack()) contentView.webContents.goBack();
+    });
+    localShortcuts.register(mainWindow, ['CmdOrCtrl+F', 'CmdOrCtrl+N'], () => {
+        if (contentView && contentView.webContents.canGoForward()) contentView.webContents.goForward();
+    });
+
+    // 메인 윈도우의 키보드 이벤트도 추가로 리스닝
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        // 키보드 이벤트를 contentView로 전달
+        if (contentView) {
+            contentView.webContents.sendInputEvent({
+                type: input.type === 'keyDown' ? 'keyDown' : 'keyUp',
+                keyCode: input.key,
+                modifiers: [],
+            });
+        }
+    });
 }
 
 // When Electron has finished initializing, create the main window
@@ -354,11 +704,11 @@ function toggleAdBlocker() {
     store.set('adBlocker', !adBlockEnabled);
 
     if (adBlockEnabled) {
-        if (blocker) blocker.disableBlockingInSession(mainWindow.webContents.session);
+        if (blocker && contentView) blocker.disableBlockingInSession(contentView.webContents.session);
     }
 
-    if (mainWindow) {
-        mainWindow.reload();
+    if (contentView) {
+        contentView.webContents.reload();
         injectToastNotification(adBlockEnabled ? 'Adblocker disabled' : 'Adblocker enabled');
     }
 }
@@ -370,7 +720,7 @@ app.on('login', async (_event, _webContents, _request, authInfo, callback) => {
             return callback('', '');
         }
 
-        const { user, password } = store.get('proxyData');
+        const { user, password } = store.get('proxyData') as { user: string; password: string };
 
         callback(user, password);
     }
